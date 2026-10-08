@@ -1,6 +1,6 @@
 gsap.registerPlugin(ScrollTrigger);
 
-// Phones/tablets = "lite" mode (lighter animations)
+// Phones/tablets = "lite" mode (lighter animations, swipe carousel)
 const lite=matchMedia('(max-width:800px),(pointer:coarse)').matches;
 const SC=lite?true:.3;                       // scroll-linked animation smoothing
 ScrollTrigger.config({ignoreMobileResize:true}); // stops jumps when the phone address bar hides/shows
@@ -100,14 +100,14 @@ if(!lite) gsap.to('.skills-blob',{x:-60,duration:5,yoyo:true,repeat:-1,ease:'sin
 addEventListener('resize',()=>layout(cur));
 
 /* ---------- Services: 3D video carousel (video only, no text) ---------- */
+/*  Desktop: moves while you scroll.   Phone: swipe with your thumb (left / right).  */
 
 // Cloudinary cloud name (already set)
 const CLOUD_NAME='umxejinu';
 const useCloud=CLOUD_NAME!=='';
-// phone-friendly: 540px wide, H.264 mp4, auto quality, audio removed
-// (these two lines build the full link from the id, so do NOT replace them)
-const vidURL   =id=>`https://res.cloudinary.com/${CLOUD_NAME}/video/upload/vc_h264,q_auto,w_540,c_limit,ac_none/${id}.mp4`;
-const posterURL=id=>`https://res.cloudinary.com/${CLOUD_NAME}/video/upload/so_0,w_540,c_limit,q_auto/${id}.jpg`;
+// phone = smaller + lighter files. (these two lines build the full link from the id, so do NOT replace them)
+const vidURL   =id=>`https://res.cloudinary.com/${CLOUD_NAME}/video/upload/vc_h264,q_auto${lite?':eco':''},w_${lite?400:540},c_limit,ac_none/${id}.mp4`;
+const posterURL=id=>`https://res.cloudinary.com/${CLOUD_NAME}/video/upload/so_0,w_${lite?320:540},c_limit,q_auto/${id}.jpg`;
 
 // ================== EDIT HERE: your videos (left to right order) ==================
 // id    = Cloudinary Public ID (from the link: .../upload/v1791486870/v3.mp4  ->  id:'v3')
@@ -157,36 +157,39 @@ svc.forEach(s=>{
 
   c.append(v,shade);
   stack.appendChild(c);
-  gsap.set(c,{xPercent:-50,yPercent:-50});
 });
-const cards=[...stack.children].filter(el=>el.classList.contains('card'));
+const cards=[...stack.children];
 const vids=cards.map(c=>c.querySelector('video'));
 const shades=cards.map(c=>c.querySelector('.shade'));
 const N=cards.length, HALF=N/2;
 
 // LOOPING carousel: one video is always in the centre, with videos on BOTH sides.
-// p = which video is in the centre (can be a fraction while scrolling).
+// p = which video is in the centre (can be a fraction while moving).
+let CW=0;
+const measure=()=>{ CW=cards[0].offsetWidth||200; };
+measure();
 function carousel(p){
-  const m=isMobile(), cw=cards[0].offsetWidth;
-  const X1=cw*(m?.70:.78);    // distance of the first neighbour from the centre
-  const X2=cw*(m?.16:.19);    // gap between the cards further away
+  const m=isMobile();
+  const X1=CW*(m?.70:.78);    // distance of the first neighbour from the centre
+  const X2=CW*(m?.16:.19);    // gap between the cards further away
   const Z1=m?190:250;         // how far the first neighbour goes back (depth)
   const Z2=m?35:55;           // extra depth for cards further away
   const ANG=m?52:60;          // tilt angle of side cards (degrees)
   for(let i=0;i<N;i++){
     let d=i-p;
-    d=((d+HALF)%N+N)%N-HALF;               // wrap around: gives each card a position from -HALF to +HALF
-    const ad=Math.abs(d), sg=d<0?-1:1;
-    const a1=Math.min(ad,1), a2=Math.max(ad-1,0), a2c=Math.min(a2,3);
-    gsap.set(cards[i],{
-      x: sg*(X1*a1+X2*a2),
-      z: -(Z1*a1+Z2*a2c),
-      rotationY: sg*a1*ANG,                 // outer edge of side cards turns away from you
-      scale: 1-a1*.12-a2c*.04,
-      autoAlpha: ad<=HALF-.5 ? 1 : Math.max(0,(HALF-ad)/.5),   // the far edge fades while it jumps to the other side
-      zIndex: 100-Math.round(ad*10)
-    });
-    gsap.set(shades[i],{opacity:Math.min(.7,a1*.32+a2c*.10)});
+    d=((d+HALF)%N+N)%N-HALF;               // wrap around: position from -HALF to +HALF
+    const ad=Math.abs(d), c=cards[i];
+    if(ad>3.6){                            // far cards are hidden (nothing to draw = smooth on phones)
+      if(!c._hid){ c.style.visibility='hidden'; c._hid=true; }
+      continue;
+    }
+    if(c._hid){ c.style.visibility='visible'; c._hid=false; }
+    const sg=d<0?-1:1, a1=Math.min(ad,1), a2=Math.max(ad-1,0), a2c=Math.min(a2,3);
+    const x=sg*(X1*a1+X2*a2), z=-(Z1*a1+Z2*a2c), ry=sg*a1*ANG, s=1-a1*.12-a2c*.04;
+    c.style.transform=`translate3d(-50%,-50%,0) translate3d(${x.toFixed(1)}px,0,${z.toFixed(1)}px) rotateY(${ry.toFixed(1)}deg) scale(${s.toFixed(3)})`;
+    c.style.opacity=ad<=HALF-.5 ? 1 : Math.max(0,(HALF-ad)/.5);
+    c.style.zIndex=100-Math.round(ad*10);
+    shades[i].style.opacity=Math.min(.7,a1*.32+a2c*.10);
   }
 }
 
@@ -196,7 +199,7 @@ function syncVideos(idx){
   if(idx===lastIdx) return;
   lastIdx=idx;
   vids.forEach((v,i)=>{
-    const dist=Math.min(Math.abs(i-idx),N-Math.abs(i-idx));   // distance in the loop
+    const diff=Math.abs(i-idx), dist=Math.min(diff,N-diff);   // distance in the loop
     const loaded=dist<=1;
     if(loaded && !v.getAttribute('src')) v.src=v.dataset.src;
     if(!loaded && v.getAttribute('src')){ v.pause(); v.removeAttribute('src'); v.load(); }
@@ -209,44 +212,123 @@ function syncVideos(idx){
   });
 }
 function pauseAll(){ vids.forEach(v=>v.pause()); lastIdx=-1; }
+const idxOf=p=>((Math.round(p)%N)+N)%N;
+
+let curP=()=>0;   // returns the current carousel position (set below)
 // stop everything if you switch browser tab / lock the phone
 document.addEventListener('visibilitychange',()=>{
   if(document.hidden) pauseAll();
-  else if(svcVisible) syncVideos(Math.round(proxy.p));
+  else if(svcVisible) syncVideos(idxOf(curP()));
 });
 
-// Scrolling down moves the carousel sideways
-// SCROLL LENGTH: smaller number = faster (more videos = longer scroll)
-const SVC_SCROLL=Math.max(1200,N*320);
-const proxy={p:0};
-gsap.to(proxy,{p:N-1,ease:'none',
-  onUpdate:()=>{ carousel(proxy.p); if(svcVisible) syncVideos(Math.round(proxy.p)); },
-  scrollTrigger:{trigger:'#services',start:'top top',end:'+='+SVC_SCROLL,pin:true,anticipatePin:1,scrub:SC}
-});
-carousel(0);
-addEventListener('resize',()=>carousel(proxy.p));
+if(!lite){
+  /* ---------- DESKTOP: carousel moves while you scroll ---------- */
+  // SCROLL LENGTH: smaller number = faster (more videos = longer scroll)
+  const SVC_SCROLL=Math.max(1200,N*320);
+  const proxy={p:0};
+  curP=()=>proxy.p;
+  gsap.to(proxy,{p:N-1,ease:'none',
+    onUpdate:()=>{ carousel(proxy.p); if(svcVisible) syncVideos(idxOf(proxy.p)); },
+    scrollTrigger:{trigger:'#services',start:'top top',end:'+='+SVC_SCROLL,pin:true,anticipatePin:1,scrub:SC}
+  });
+  carousel(0);
+  addEventListener('resize',()=>{ measure(); carousel(proxy.p); });
 
-// Start loading just before the section arrives, pause everything when it is far away
-ScrollTrigger.create({
-  trigger:'#services',
-  start:'top bottom+=800',
-  end:()=>'+='+(SVC_SCROLL+innerHeight*2+800),
-  onToggle:self=>{
-    svcVisible=self.isActive;
-    if(svcVisible) syncVideos(Math.round(proxy.p));
-    else pauseAll();
-  }
-});
-
-// POP-UP entrance: replays every time the section comes into view (from top OR bottom)
-gsap.from('#stack',{y:120,scale:.8,opacity:0,duration:.8,ease:'back.out(1.4)',
-  scrollTrigger:{
+  ScrollTrigger.create({
     trigger:'#services',
-    start:'top 85%',
-    end:()=>'+='+(innerHeight*0.85+SVC_SCROLL+innerHeight),
-    toggleActions:REPLAY
+    start:'top bottom+=800',
+    end:()=>'+='+(SVC_SCROLL+innerHeight*2+800),
+    onToggle:self=>{
+      svcVisible=self.isActive;
+      if(svcVisible) syncVideos(idxOf(proxy.p));
+      else pauseAll();
+    }
+  });
+
+  // POP-UP entrance: replays every time the section comes into view
+  gsap.from('#stack',{y:120,scale:.8,opacity:0,duration:.8,ease:'back.out(1.4)',
+    scrollTrigger:{
+      trigger:'#services',
+      start:'top 85%',
+      end:()=>'+='+(innerHeight*0.85+SVC_SCROLL+innerHeight),
+      toggleActions:REPLAY
+    }
+  });
+}else{
+  /* ---------- PHONE: swipe left / right with your thumb (no pinned scroll = no lag) ---------- */
+  let pos=0, target=0, raf=0;
+  curP=()=>pos;
+  const STEP=()=>CW*.55;                 // finger distance for one video (smaller = more sensitive)
+  const INERTIA=220;                     // how far a quick flick keeps going (bigger = goes further)
+
+  function loop(){
+    const diff=target-pos;
+    if(Math.abs(diff)<.003){
+      pos=target; carousel(pos); raf=0;
+      if(svcVisible) syncVideos(idxOf(pos));      // swipe stopped: play the centre video
+      return;
+    }
+    pos+=diff*.18; carousel(pos);
+    raf=requestAnimationFrame(loop);
   }
-});
+  const go=()=>{ if(!raf) raf=requestAnimationFrame(loop); };
+
+  let dragging=false, moved=false, sx=0, startPos=0, lastX=0, lastT=0, vel=0;
+  stack.addEventListener('pointerdown',e=>{
+    dragging=true; moved=false;
+    sx=lastX=e.clientX; startPos=pos; lastT=performance.now(); vel=0;
+    target=pos;
+    if(raf){ cancelAnimationFrame(raf); raf=0; }
+    pauseAll();                                   // video pauses while you swipe (lighter)
+    try{ stack.setPointerCapture(e.pointerId); }catch(_){}
+  });
+  stack.addEventListener('pointermove',e=>{
+    if(!dragging) return;
+    const dx=e.clientX-sx;
+    if(Math.abs(dx)>6) moved=true;
+    const now=performance.now(), dt=Math.max(1,now-lastT);
+    vel=vel*.6+(((lastX-e.clientX)/STEP())/dt)*.4;  // swipe speed (cards per millisecond)
+    lastX=e.clientX; lastT=now;
+    pos=startPos-dx/STEP(); target=pos;
+    carousel(pos);
+  });
+  function release(e){
+    if(!dragging) return;
+    dragging=false;
+    if(moved){
+      let t=Math.round(pos+vel*INERTIA);
+      const base=Math.round(pos);
+      target=Math.max(base-3,Math.min(base+3,t));   // a flick can move at most 3 videos
+    }else{
+      // simple tap on a side video: bring it to the centre
+      const card=e.target.closest&&e.target.closest('.card');
+      const i=cards.indexOf(card);
+      if(i>-1){
+        let d=i-Math.round(pos); d=((d+HALF)%N+N)%N-HALF;
+        target=Math.round(pos)+d;
+      }else target=Math.round(pos);
+    }
+    go();
+  }
+  stack.addEventListener('pointerup',release);
+  stack.addEventListener('pointercancel',release);
+
+  carousel(0);
+  addEventListener('resize',()=>{ measure(); carousel(pos); });
+
+  // load/play only while the section is on screen
+  ScrollTrigger.create({
+    trigger:'#services',
+    start:'top bottom+=300',
+    end:'bottom top-300',
+    onToggle:self=>{
+      svcVisible=self.isActive;
+      if(svcVisible) syncVideos(idxOf(pos));
+      else pauseAll();
+    }
+  });
+}
+window.addEventListener('load',()=>{ measure(); carousel(curP()); });
 
 /* ---------- Editor: giant type punches in every time ---------- */
 const ed=gsap.timeline({scrollTrigger:{trigger:'#editor',start:'top 70%',end:'bottom 20%',toggleActions:REPLAY}});

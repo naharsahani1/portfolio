@@ -116,3 +116,11 @@ section{position:relative;min-height:100vh;min-height:100svh;overflow:hidden}
   .f-item{min-height:0;padding:1.3rem 1rem}
   .f-item b{font-size:1rem}
 }
+/* services: swipe / drag support */
+.stack{touch-action:pan-y;-webkit-user-select:none;user-select:none;cursor:grab}
+.stack:active{cursor:grabbing}
+.card{backface-visibility:hidden;-webkit-backface-visibility:hidden}
+.card video{pointer-events:none}
+@media(max-width:800px),(pointer:coarse){
+  #services{min-height:100svh}
+}
