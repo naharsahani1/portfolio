@@ -99,7 +99,7 @@ gsap.from('#skills h2',{x:-80,opacity:0,duration:.5,scrollTrigger:{trigger:'#ski
 if(!lite) gsap.to('.skills-blob',{x:-60,duration:5,yoyo:true,repeat:-1,ease:'sine.inOut'});
 addEventListener('resize',()=>layout(cur));
 
-/* ---------- Services: stacked VIDEO cards (ONE video plays at a time) ---------- */
+/* ---------- Services: 3D video carousel (video only, no text) ---------- */
 
 // Cloudinary cloud name (already set)
 const CLOUD_NAME='umxejinu';
@@ -109,34 +109,27 @@ const useCloud=CLOUD_NAME!=='';
 const vidURL   =id=>`https://res.cloudinary.com/${CLOUD_NAME}/video/upload/vc_h264,q_auto,w_540,c_limit,ac_none/${id}.mp4`;
 const posterURL=id=>`https://res.cloudinary.com/${CLOUD_NAME}/video/upload/so_0,w_540,c_limit,q_auto/${id}.jpg`;
 
-// ================== EDIT HERE: your videos ==================
+// ================== EDIT HERE: your videos (left to right order) ==================
 // id    = Cloudinary Public ID (from the link: .../upload/v1791486870/v3.mp4  ->  id:'v3')
-// local = backup file in assets/videos/ (used if id is empty or Cloudinary fails; can be '' if you deleted local files)
-// fit:'contain' = show the whole video; fit:'cover' = fill the card and crop (pos picks the visible part)
-// To add a card: copy one line below, change title and id. To remove a card: delete its line.
+// local = backup file in assets/videos/ (can be '' if you deleted local files)
+// To remove a video: delete its line. To add one: copy a line and change the id.
 const svc=[
-  {title:'',  id:'v1', local:'assets/videos/v1.mp4', fit:'contain', pos:'center'},
-  {title:'',  id:'v2', local:'assets/videos/v2.mp4', fit:'contain', pos:'center'},
-  {title:'',  id:'v3', local:'assets/videos/v3.mp4', fit:'contain', pos:'center'},
-  {title:'',  id:'v4', local:'assets/videos/v4.mp4', fit:'contain', pos:'center'},
-  {title:'',  id:'v5', local:'assets/videos/v5.mp4', fit:'contain', pos:'center'},
-  {title:'',  id:'v6', local:'assets/videos/v5.mp4', fit:'contain', pos:'center'},
-  {title:'',  id:'v7', local:'assets/videos/v5.mp4', fit:'contain', pos:'center'},
-  {title:'',  id:'v8', local:'assets/videos/v5.mp4', fit:'contain', pos:'center'},
-  {title:'',  id:'v9', local:'assets/videos/v5.mp4', fit:'contain', pos:'center'}
-  // Your other uploaded videos. Remove the // at the start of a line to show it:
-  // ,{title:'COLOUR GRADING', id:'v6', local:'', fit:'contain', pos:'center'}
-  // ,{title:'MOTION GRAPHICS', id:'v7', local:'', fit:'contain', pos:'center'}
-  // ,{title:'STORYTELLING',    id:'v8', local:'', fit:'contain', pos:'center'}
-  // ,{title:'CINEMATIC',       id:'v9', local:'', fit:'contain', pos:'center'}
+  {id:'v1', local:'assets/videos/v1.mp4', fit:'cover', pos:'center'},
+  {id:'v2', local:'assets/videos/v2.mp4', fit:'cover', pos:'center'},
+  {id:'v3', local:'assets/videos/v3.mp4', fit:'cover', pos:'center'},
+  {id:'v4', local:'assets/videos/v4.mp4', fit:'cover', pos:'center'},
+  {id:'v5', local:'assets/videos/v5.mp4', fit:'cover', pos:'center'},
+  {id:'v6', local:'',                     fit:'cover', pos:'center'},
+  {id:'v7', local:'',                     fit:'cover', pos:'center'},
+  {id:'v8', local:'',                     fit:'cover', pos:'center'},
+  {id:'v9', local:'',                     fit:'cover', pos:'center'}
 ];
-// ============================================================
+// ==================================================================================
 
 const stack=document.getElementById('stack');
-svc.forEach((s,i)=>{
+svc.forEach(s=>{
   const c=document.createElement('div');
   c.className='card';
-  c.style.zIndex=svc.length-i;
 
   const fromCloud=useCloud && !!s.id;          // this card uses Cloudinary?
   const v=document.createElement('video');     // ONE video per card, src is added only when needed
@@ -146,8 +139,8 @@ svc.forEach((s,i)=>{
   v.setAttribute('disableremoteplayback',''); v.disablePictureInPicture=true;
   v.preload='auto';
   v.dataset.src=fromCloud ? vidURL(s.id) : s.local;
-  if(fromCloud) v.poster=posterURL(s.id);      // first frame shows while the video loads
-  v.style.objectFit=s.fit==='cover'?'cover':'contain';
+  if(fromCloud) v.poster=posterURL(s.id);      // first frame shows on side cards (video not loaded)
+  v.style.objectFit=s.fit==='contain'?'contain':'cover';
   v.style.objectPosition=s.pos||'center';
 
   // if the Cloudinary link fails, switch to the local file automatically
@@ -159,24 +152,52 @@ svc.forEach((s,i)=>{
     const p=v.play(); if(p&&p.catch) p.catch(()=>{});
   });
 
-  const h=document.createElement('h2');
-  h.textContent=s.title;
+  const shade=document.createElement('div');   // dark layer: side cards look dimmer
+  shade.className='shade';
 
-  c.append(v,h);
+  c.append(v,shade);
   stack.appendChild(c);
-  gsap.set(c,{y:i*-26,scale:1-i*.06,opacity:1-i*.12});
+  gsap.set(c,{xPercent:-50,yPercent:-50});
 });
-const cards=[...stack.children];
-const vids=[...stack.querySelectorAll('video')];
+const cards=[...stack.children].filter(el=>el.classList.contains('card'));
+const vids=cards.map(c=>c.querySelector('video'));
+const shades=cards.map(c=>c.querySelector('.shade'));
+const N=cards.length, HALF=N/2;
 
-// ONLY the top card plays. The next card is loaded but PAUSED (ready to start instantly).
-// Everything else is stopped and unloaded.
+// LOOPING carousel: one video is always in the centre, with videos on BOTH sides.
+// p = which video is in the centre (can be a fraction while scrolling).
+function carousel(p){
+  const m=isMobile(), cw=cards[0].offsetWidth;
+  const X1=cw*(m?.70:.78);    // distance of the first neighbour from the centre
+  const X2=cw*(m?.16:.19);    // gap between the cards further away
+  const Z1=m?190:250;         // how far the first neighbour goes back (depth)
+  const Z2=m?35:55;           // extra depth for cards further away
+  const ANG=m?52:60;          // tilt angle of side cards (degrees)
+  for(let i=0;i<N;i++){
+    let d=i-p;
+    d=((d+HALF)%N+N)%N-HALF;               // wrap around: gives each card a position from -HALF to +HALF
+    const ad=Math.abs(d), sg=d<0?-1:1;
+    const a1=Math.min(ad,1), a2=Math.max(ad-1,0), a2c=Math.min(a2,3);
+    gsap.set(cards[i],{
+      x: sg*(X1*a1+X2*a2),
+      z: -(Z1*a1+Z2*a2c),
+      rotationY: sg*a1*ANG,                 // outer edge of side cards turns away from you
+      scale: 1-a1*.12-a2c*.04,
+      autoAlpha: ad<=HALF-.5 ? 1 : Math.max(0,(HALF-ad)/.5),   // the far edge fades while it jumps to the other side
+      zIndex: 100-Math.round(ad*10)
+    });
+    gsap.set(shades[i],{opacity:Math.min(.7,a1*.32+a2c*.10)});
+  }
+}
+
+// ONLY the centre card plays. Its neighbours are loaded but PAUSED. Everything else is unloaded.
 let lastIdx=-1,svcVisible=false;
 function syncVideos(idx){
   if(idx===lastIdx) return;
   lastIdx=idx;
   vids.forEach((v,i)=>{
-    const loaded=(i===idx || i===idx+1);
+    const dist=Math.min(Math.abs(i-idx),N-Math.abs(i-idx));   // distance in the loop
+    const loaded=dist<=1;
     if(loaded && !v.getAttribute('src')) v.src=v.dataset.src;
     if(!loaded && v.getAttribute('src')){ v.pause(); v.removeAttribute('src'); v.load(); }
     if(i===idx){
@@ -191,21 +212,19 @@ function pauseAll(){ vids.forEach(v=>v.pause()); lastIdx=-1; }
 // stop everything if you switch browser tab / lock the phone
 document.addEventListener('visibilitychange',()=>{
   if(document.hidden) pauseAll();
-  else if(svcVisible) syncVideos(Math.min(cards.length-1,Math.floor(st.progress()*st.duration())));
+  else if(svcVisible) syncVideos(Math.round(proxy.p));
 });
 
-// Cards peel off one by one while you scroll
-// SCROLL LENGTH: smaller number = faster (increase it if you add many cards)
-const SVC_SCROLL=1200;
-const st=gsap.timeline({scrollTrigger:{trigger:'#services',start:'top top',end:'+='+SVC_SCROLL,pin:true,anticipatePin:1,scrub:SC,
-  onUpdate:self=>{ if(svcVisible) syncVideos(Math.min(cards.length-1,Math.floor(self.progress*st.duration()))); }
-}});
-cards.forEach((c,i)=>{
-  if(i===cards.length-1) return; // the LAST card stays on screen (no empty screen)
-  st.to(c,{yPercent:-130,rotateX:20,opacity:0,duration:1,ease:'power2.in'},i);
-  cards.slice(i+1).forEach((n,k)=>st.to(n,{y:k*-26,scale:1-k*.06,opacity:1-k*.12,duration:1},i));
+// Scrolling down moves the carousel sideways
+// SCROLL LENGTH: smaller number = faster (more videos = longer scroll)
+const SVC_SCROLL=Math.max(1200,N*320);
+const proxy={p:0};
+gsap.to(proxy,{p:N-1,ease:'none',
+  onUpdate:()=>{ carousel(proxy.p); if(svcVisible) syncVideos(Math.round(proxy.p)); },
+  scrollTrigger:{trigger:'#services',start:'top top',end:'+='+SVC_SCROLL,pin:true,anticipatePin:1,scrub:SC}
 });
-st.to({},{duration:.3}); // short hold on the last card
+carousel(0);
+addEventListener('resize',()=>carousel(proxy.p));
 
 // Start loading just before the section arrives, pause everything when it is far away
 ScrollTrigger.create({
@@ -214,13 +233,13 @@ ScrollTrigger.create({
   end:()=>'+='+(SVC_SCROLL+innerHeight*2+800),
   onToggle:self=>{
     svcVisible=self.isActive;
-    if(svcVisible) syncVideos(Math.min(cards.length-1,Math.floor(st.progress()*st.duration())));
+    if(svcVisible) syncVideos(Math.round(proxy.p));
     else pauseAll();
   }
 });
 
 // POP-UP entrance: replays every time the section comes into view (from top OR bottom)
-const popTl=gsap.timeline({
+gsap.from('#stack',{y:120,scale:.8,opacity:0,duration:.8,ease:'back.out(1.4)',
   scrollTrigger:{
     trigger:'#services',
     start:'top 85%',
@@ -228,9 +247,6 @@ const popTl=gsap.timeline({
     toggleActions:REPLAY
   }
 });
-popTl
-  .from('#stack',{scale:.55,y:160,rotate:-4,opacity:0,duration:.8,ease:'back.out(1.6)'})
-  .from('.card h2',{scale:.5,y:30,opacity:0,duration:.5,ease:'back.out(2)',stagger:.05},'-=.3');
 
 /* ---------- Editor: giant type punches in every time ---------- */
 const ed=gsap.timeline({scrollTrigger:{trigger:'#editor',start:'top 70%',end:'bottom 20%',toggleActions:REPLAY}});
